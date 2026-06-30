@@ -1,0 +1,526 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Vocabulary</title>
+
+<style>
+body {
+    background: #222;
+    color: #ddd;
+    font-family: sans-serif;
+    margin: 20px;
+}
+
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.header h2 {
+    margin: 0;
+    font-weight: normal;
+}
+
+#sortMode {
+    background: #333;
+    color: #ddd;
+    border: 1px solid #555;
+    border-radius: 4px;
+    padding: 4px 8px;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+th,
+td {
+    padding: 4px 8px;
+    border-bottom: 1px solid #444;
+}
+
+th {
+    text-align: left;
+    font-weight: normal;
+    color: #aaa;
+}
+
+.handle {
+    width: 24px;
+    color: #888;
+    cursor: move;
+    user-select: none;
+}
+
+.hidden {
+    visibility: hidden;
+}
+
+.actions {
+    width: 70px;
+    white-space: nowrap;
+}
+
+.actions button {
+    background: none;
+    border: none;
+    color: #ddd;
+    cursor: pointer;
+    font-size: 16px;
+    padding: 0 2px;
+}
+
+.actions button:hover {
+    color: white;
+}
+
+input {
+    width: 100%;
+    box-sizing: border-box;
+    background: #2b2b2b;
+    color: #ddd;
+    border: 1px solid #555;
+    padding: 4px 6px;
+}
+
+tr.dragging {
+    opacity: 0.4;
+}
+</style>
+</head>
+
+<body>
+
+<div class="header">
+    <h2>Vocabulary</h2>
+
+    <select id="sortMode">
+        <option value="original">
+            Original order
+        </option>
+
+        <option value="reverse">
+            Reverse order
+        </option>
+
+        <option value="alphabetic">
+            Alphabetic
+        </option>
+
+        <option value="random">
+            Random
+        </option>
+    </select>
+</div>
+
+<table>
+    <thead>
+    <tr>
+        <th></th>
+        <th>Word</th>
+        <th>Translation</th>
+        <th></th>
+    </tr>
+    </thead>
+
+    <tbody id="tbody">
+    </tbody>
+</table>
+
+<script>
+let words = [];
+let sortMode = 'original';
+
+load();
+render();
+
+document.getElementById('sortMode').onchange = e => {
+    sortMode = e.target.value;
+    render();
+};
+
+function load() {
+    words = JSON.parse(
+        localStorage.getItem('words') ?? '[]'
+    );
+}
+
+function save() {
+    localStorage.setItem(
+        'words',
+        JSON.stringify(words)
+    );
+}
+
+function addWord() {
+    const wordInput =
+        document.getElementById('newWord');
+
+    const translationInput =
+        document.getElementById('newTranslation');
+
+    const word =
+        wordInput.value.trim();
+
+    const translation =
+        translationInput.value.trim();
+
+    if (!word) {
+        wordInput.focus();
+        return;
+    }
+
+    words.push({
+        id: crypto.randomUUID(),
+        word,
+        translation
+    });
+
+    save();
+
+    wordInput.value = '';
+    translationInput.value = '';
+
+    render();
+    wordInput.focus();
+}
+
+function editWord(id) {
+    const item =
+        words.find(x => x.id === id);
+
+    if (!item) {
+        return;
+    }
+
+    const word =
+        prompt('Word', item.word);
+
+    if (word === null) {
+        return;
+    }
+
+    const translation =
+        prompt(
+            'Translation',
+            item.translation
+        );
+
+    if (translation === null) {
+        return;
+    }
+
+    item.word = word.trim();
+    item.translation =
+        translation.trim();
+
+    save();
+    render();
+}
+
+function removeWord(id) {
+    words =
+        words.filter(x => x.id !== id);
+
+    save();
+    render();
+}
+
+function getDisplayedWords() {
+    switch (sortMode) {
+
+        case 'reverse':
+            return [...words].reverse();
+
+        case 'alphabetic':
+            return [...words].sort(
+                (a, b) =>
+                    a.word.localeCompare(
+                        b.word
+                    )
+            );
+
+        case 'random':
+            return shuffle([...words]);
+
+        default:
+            return words;
+    }
+}
+
+function shuffle(arr) {
+    const copy = [...arr];
+
+    for (
+        let i = copy.length - 1;
+        i > 0;
+        i--
+    ) {
+        const j = Math.floor(
+            Math.random() * (i + 1)
+        );
+
+        [copy[i], copy[j]] =
+            [copy[j], copy[i]];
+    }
+
+    return copy;
+}
+
+function render() {
+    const tbody =
+        document.getElementById(
+            'tbody'
+        );
+
+    tbody.innerHTML = '';
+
+    const displayed =
+        getDisplayedWords();
+
+    const allowDrag =
+        sortMode === 'original';
+
+    displayed.forEach(item => {
+        const tr =
+            document.createElement('tr');
+
+        tr.dataset.id = item.id;
+        tr.draggable = allowDrag;
+
+        tr.innerHTML = `
+            <td class="handle ${allowDrag ? '' : 'hidden'}">
+                ☰
+            </td>
+
+            <td>
+                ${escapeHtml(item.word)}
+            </td>
+
+            <td>
+                ${escapeHtml(item.translation)}
+            </td>
+
+            <td class="actions">
+                <button
+                    data-edit="${item.id}"
+                    title="Edit">
+                    ✏
+                </button>
+
+                <button
+                    data-delete="${item.id}"
+                    title="Delete">
+                    🗑
+                </button>
+            </td>
+        `;
+
+        tbody.appendChild(tr);
+    });
+
+    appendAddRow();
+    bindButtons();
+
+    if (allowDrag) {
+        bindDnD();
+    }
+}
+
+function appendAddRow() {
+    const tbody =
+        document.getElementById(
+            'tbody'
+        );
+
+    const tr =
+        document.createElement('tr');
+
+    tr.innerHTML = `
+        <td>＋</td>
+
+        <td>
+            <input
+                id="newWord"
+                placeholder="word">
+        </td>
+
+        <td>
+            <input
+                id="newTranslation"
+                placeholder="translation">
+        </td>
+
+        <td class="actions">
+            <button
+                id="addBtn"
+                title="Add">
+                ➕
+            </button>
+        </td>
+    `;
+
+    tbody.appendChild(tr);
+
+    document.getElementById(
+        'addBtn'
+    ).onclick = addWord;
+
+    const onEnter = e => {
+        if (e.key === 'Enter') {
+            addWord();
+        }
+    };
+
+    document
+        .getElementById('newWord')
+        .addEventListener(
+            'keydown',
+            onEnter
+        );
+
+    document
+        .getElementById(
+            'newTranslation'
+        )
+        .addEventListener(
+            'keydown',
+            onEnter
+        );
+}
+
+function bindButtons() {
+    document
+        .querySelectorAll(
+            '[data-edit]'
+        )
+        .forEach(btn => {
+            btn.onclick =
+                () =>
+                    editWord(
+                        btn.dataset.edit
+                    );
+        });
+
+    document
+        .querySelectorAll(
+            '[data-delete]'
+        )
+        .forEach(btn => {
+            btn.onclick =
+                () =>
+                    removeWord(
+                        btn.dataset.delete
+                    );
+        });
+}
+
+function bindDnD() {
+    let dragged = null;
+
+    document
+        .querySelectorAll(
+            'tbody tr[data-id]'
+        )
+        .forEach(row => {
+
+            row.addEventListener(
+                'dragstart',
+                () => {
+                    dragged = row;
+                    row.classList.add(
+                        'dragging'
+                    );
+                }
+            );
+
+            row.addEventListener(
+                'dragend',
+                () => {
+                    row.classList.remove(
+                        'dragging'
+                    );
+                }
+            );
+
+            row.addEventListener(
+                'dragover',
+                e => {
+                    e.preventDefault();
+                }
+            );
+
+            row.addEventListener(
+                'drop',
+                e => {
+                    e.preventDefault();
+
+                    if (
+                        !dragged ||
+                        dragged === row
+                    ) {
+                        return;
+                    }
+
+                    const fromId =
+                        dragged.dataset.id;
+
+                    const toId =
+                        row.dataset.id;
+
+                    const from =
+                        words.findIndex(
+                            x =>
+                                x.id ===
+                                fromId
+                        );
+
+                    const to =
+                        words.findIndex(
+                            x =>
+                                x.id ===
+                                toId
+                        );
+
+                    const [item] =
+                        words.splice(
+                            from,
+                            1
+                        );
+
+                    words.splice(
+                        to,
+                        0,
+                        item
+                    );
+
+                    save();
+                    render();
+                }
+            );
+        });
+}
+
+function escapeHtml(text) {
+    return text
+        .replaceAll(
+            '&',
+            '&amp;'
+        )
+        .replaceAll(
+            '<',
+            '&lt;'
+        )
+        .replaceAll(
+            '>',
+            '&gt;'
+        );
+}
+</script>
+
+</body>
+</html>
