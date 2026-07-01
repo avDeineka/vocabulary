@@ -78,6 +78,30 @@ th {
     color: white;
 }
 
+.column-toggle {
+    background: none;
+    border: none;
+    color: #aaa;
+    cursor: pointer;
+    padding: 0;
+}
+
+.column-toggle:hover {
+    color: #fff;
+}
+
+.cell-placeholder {
+    background: none;
+    border: none;
+    color: #aaa;
+    cursor: pointer;
+    padding: 0;
+}
+
+.cell-placeholder:hover {
+    color: #fff;
+}
+
 input {
     width: 100%;
     box-sizing: border-box;
@@ -89,6 +113,14 @@ input {
 
 tr.dragging {
     opacity: 0.4;
+}
+
+tr.manageable td {
+    background: #282828;
+}
+
+tr.editing td {
+    background: #2c2c2c;
 }
 </style>
 </head>
@@ -121,8 +153,24 @@ tr.dragging {
     <thead>
     <tr>
         <th></th>
-        <th>Word</th>
-        <th>Translation</th>
+        <th>
+            Word
+            <button
+                class="column-toggle"
+                data-toggle-column="word"
+                title="Toggle word column">
+                [?]
+            </button>
+        </th>
+        <th>
+            Translation
+            <button
+                class="column-toggle"
+                data-toggle-column="translation"
+                title="Toggle translation column">
+                [?]
+            </button>
+        </th>
         <th></th>
     </tr>
     </thead>
@@ -132,15 +180,30 @@ tr.dragging {
 </table>
 
 <script>
+// Central application state: sorting, row modes, and column visibility live here.
+const state = {
+    sortMode: 'original',
+    rowMode: 'view',
+    activeRowId: null,
+    hiddenColumns: {
+        word: false,
+        translation: false
+    },
+    revealedCells: {
+        word: {},
+        translation: {}
+    }
+};
+
 let words = [];
-let sortMode = 'original';
-let editingId = null;
 
 load();
 render();
 
 document.getElementById('sortMode').onchange = e => {
-    sortMode = e.target.value;
+    state.sortMode = e.target.value;
+    state.rowMode = 'view';
+    state.activeRowId = null;
     render();
 };
 
@@ -190,8 +253,35 @@ function addWord() {
     wordInput.focus();
 }
 
+function setRowMode(mode, rowId = null) {
+    state.rowMode = mode;
+    state.activeRowId = rowId;
+}
+
+function toggleColumn(column) {
+    state.hiddenColumns[column] =
+        !state.hiddenColumns[column];
+
+    if (!state.hiddenColumns[column]) {
+        state.revealedCells[column] = {};
+    }
+
+    render();
+}
+
+function revealCell(column, rowId) {
+    state.revealedCells[column][rowId] = true;
+    render();
+}
+
+function isCellRevealed(column, rowId) {
+    return Boolean(
+        state.revealedCells[column][rowId]
+    );
+}
+
 function editWord(id) {
-    editingId = id;
+    setRowMode('edit', id);
     render();
 }
 
@@ -234,13 +324,13 @@ function saveEdit(id) {
     item.translation =
         translationInput.value.trim();
 
-    editingId = null;
+    setRowMode('view');
     save();
     render();
 }
 
 function cancelEdit() {
-    editingId = null;
+    setRowMode('view');
     render();
 }
 
@@ -248,12 +338,19 @@ function removeWord(id) {
     words =
         words.filter(x => x.id !== id);
 
+    delete state.revealedCells.word[id];
+    delete state.revealedCells.translation[id];
+
+    if (state.activeRowId === id) {
+        setRowMode('view');
+    }
+
     save();
     render();
 }
 
 function getDisplayedWords() {
-    switch (sortMode) {
+    switch (state.sortMode) {
 
         case 'reverse':
             return [...words].reverse();
@@ -305,15 +402,29 @@ function render() {
         getDisplayedWords();
 
     const allowDrag =
-        sortMode === 'original' && !editingId;
+        state.sortMode === 'original' &&
+        state.rowMode !== 'edit';
 
     displayed.forEach(item => {
         const tr =
             document.createElement('tr');
 
         tr.dataset.id = item.id;
+        tr.classList.toggle(
+            'manageable',
+            state.rowMode === 'manageable' &&
+            state.activeRowId === item.id
+        );
+        tr.classList.toggle(
+            'editing',
+            state.rowMode === 'edit' &&
+            state.activeRowId === item.id
+        );
 
-        if (item.id === editingId) {
+        if (
+            state.rowMode === 'edit' &&
+            state.activeRowId === item.id
+        ) {
             tr.innerHTML = `
                 <td
                     class="handle hidden"
@@ -356,25 +467,41 @@ function render() {
                 </td>
 
                 <td>
-                    ${escapeHtml(item.word)}
+                    ${
+                        state.hiddenColumns.word
+                            && !isCellRevealed(
+                                'word',
+                                item.id
+                            )
+                            ? `<button class="cell-placeholder" data-reveal-cell="word" data-row-id="${item.id}">[????]</button>`
+                            : escapeHtml(item.word)
+                    }
                 </td>
 
                 <td>
-                    ${escapeHtml(item.translation)}
+                    ${
+                        state.hiddenColumns.translation
+                            && !isCellRevealed(
+                                'translation',
+                                item.id
+                            )
+                            ? `<button class="cell-placeholder" data-reveal-cell="translation" data-row-id="${item.id}">[????]</button>`
+                            : escapeHtml(item.translation)
+                    }
                 </td>
 
-                <td class="actions">
+                <td class="actions ${
+                    state.rowMode === 'manageable' &&
+                    state.activeRowId === item.id
+                        ? ''
+                        : 'hidden'
+                }">
                     <button
                         data-edit="${item.id}"
-                        title="Edit">
-                        ✏
-                    </button>
-
+                        title="Edit">✏</button>
                     <button
                         data-delete="${item.id}"
-                        title="Delete">
-                        🗑
-                    </button>
+                        title="Delete">🗑</button>
                 </td>
             `;
         }
@@ -453,6 +580,89 @@ function appendAddRow() {
 }
 
 function bindButtons() {
+    document
+        .querySelector(
+            'tbody'
+        ).onclick = e => {
+            const row =
+                e.target.closest(
+                    'tr[data-id]'
+                );
+            const interactive =
+                e.target.closest(
+                    'button, input, .handle'
+                );
+
+            if (
+                !row ||
+                interactive
+            ) {
+                return;
+            }
+
+            if (state.rowMode === 'edit') {
+                return;
+            }
+
+            if (
+                state.rowMode === 'manageable' &&
+                state.activeRowId === row.dataset.id
+            ) {
+                setRowMode('view');
+            } else {
+                setRowMode(
+                    'manageable',
+                    row.dataset.id
+                );
+            }
+            render();
+        };
+
+    document.body.onclick = e => {
+        if (
+            e.target.closest('tr[data-id]') ||
+            e.target.closest('#sortMode') ||
+            e.target.closest('#addBtn') ||
+            e.target.closest('#newWord') ||
+            e.target.closest('#newTranslation')
+        ) {
+            return;
+        }
+
+        if (
+            state.rowMode === 'manageable'
+        ) {
+            setRowMode('view');
+            render();
+        }
+    };
+
+    document
+        .querySelectorAll(
+            '[data-toggle-column]'
+        )
+        .forEach(btn => {
+            btn.onclick =
+                () =>
+                    toggleColumn(
+                        btn.dataset.toggleColumn
+                    );
+        });
+
+    document
+        .querySelectorAll(
+            '[data-reveal-cell]'
+        )
+        .forEach(btn => {
+            btn.onclick =
+                () => {
+                    revealCell(
+                        btn.dataset.revealCell,
+                        btn.dataset.rowId
+                    );
+                };
+        });
+
     document
         .querySelectorAll(
             '[data-edit]'
