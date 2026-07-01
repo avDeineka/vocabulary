@@ -312,11 +312,12 @@ function render() {
             document.createElement('tr');
 
         tr.dataset.id = item.id;
-        tr.draggable = allowDrag;
 
         if (item.id === editingId) {
             tr.innerHTML = `
-                <td class="handle hidden">
+                <td
+                    class="handle hidden"
+                    draggable="false">
                     ☰
                 </td>
 
@@ -348,7 +349,9 @@ function render() {
             `;
         } else {
             tr.innerHTML = `
-                <td class="handle ${allowDrag ? '' : 'hidden'}">
+                <td
+                    class="handle ${allowDrag ? '' : 'hidden'}"
+                    draggable="${allowDrag}">
                     ☰
                 </td>
 
@@ -530,28 +533,39 @@ function bindDnD() {
 
     document
         .querySelectorAll(
+            'tbody tr[data-id] .handle'
+        )
+        .forEach(handle => {
+
+            handle.addEventListener(
+                'dragstart',
+                () => {
+                    dragged =
+                        handle.closest('tr');
+                    dragged.classList.add(
+                        'dragging'
+                    );
+                }
+            );
+
+            handle.addEventListener(
+                'dragend',
+                () => {
+                    if (dragged) {
+                        dragged.classList.remove(
+                            'dragging'
+                        );
+                    }
+                    dragged = null;
+                }
+            );
+        });
+
+    document
+        .querySelectorAll(
             'tbody tr[data-id]'
         )
         .forEach(row => {
-
-            row.addEventListener(
-                'dragstart',
-                () => {
-                    dragged = row;
-                    row.classList.add(
-                        'dragging'
-                    );
-                }
-            );
-
-            row.addEventListener(
-                'dragend',
-                () => {
-                    row.classList.remove(
-                        'dragging'
-                    );
-                }
-            );
 
             row.addEventListener(
                 'dragover',
