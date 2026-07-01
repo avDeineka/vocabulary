@@ -134,6 +134,7 @@ tr.dragging {
 <script>
 let words = [];
 let sortMode = 'original';
+let editingId = null;
 
 load();
 render();
@@ -190,6 +191,11 @@ function addWord() {
 }
 
 function editWord(id) {
+    editingId = id;
+    render();
+}
+
+function saveEdit(id) {
     const item =
         words.find(x => x.id === id);
 
@@ -197,28 +203,44 @@ function editWord(id) {
         return;
     }
 
-    const word =
-        prompt('Word', item.word);
-
-    if (word === null) {
-        return;
-    }
-
-    const translation =
-        prompt(
-            'Translation',
-            item.translation
+    const row =
+        document.querySelector(
+            `tr[data-id="${id}"]`
         );
 
-    if (translation === null) {
+    if (!row) {
         return;
     }
 
-    item.word = word.trim();
-    item.translation =
-        translation.trim();
+    const wordInput =
+        row.querySelector(
+            '[data-field="word"]'
+        );
 
+    const translationInput =
+        row.querySelector(
+            '[data-field="translation"]'
+        );
+
+    const word =
+        wordInput.value.trim();
+
+    if (!word) {
+        wordInput.focus();
+        return;
+    }
+
+    item.word = word;
+    item.translation =
+        translationInput.value.trim();
+
+    editingId = null;
     save();
+    render();
+}
+
+function cancelEdit() {
+    editingId = null;
     render();
 }
 
@@ -283,7 +305,7 @@ function render() {
         getDisplayedWords();
 
     const allowDrag =
-        sortMode === 'original';
+        sortMode === 'original' && !editingId;
 
     displayed.forEach(item => {
         const tr =
@@ -292,33 +314,67 @@ function render() {
         tr.dataset.id = item.id;
         tr.draggable = allowDrag;
 
-        tr.innerHTML = `
-            <td class="handle ${allowDrag ? '' : 'hidden'}">
-                ☰
-            </td>
+        if (item.id === editingId) {
+            tr.innerHTML = `
+                <td class="handle hidden">
+                    ☰
+                </td>
 
-            <td>
-                ${escapeHtml(item.word)}
-            </td>
+                <td>
+                    <input
+                        data-field="word"
+                        value="${escapeAttr(item.word)}">
+                </td>
 
-            <td>
-                ${escapeHtml(item.translation)}
-            </td>
+                <td>
+                    <input
+                        data-field="translation"
+                        value="${escapeAttr(item.translation)}">
+                </td>
 
-            <td class="actions">
-                <button
-                    data-edit="${item.id}"
-                    title="Edit">
-                    ✏
-                </button>
+                <td class="actions">
+                    <button
+                        data-save="${item.id}"
+                        title="Save">
+                        💾
+                    </button>
 
-                <button
-                    data-delete="${item.id}"
-                    title="Delete">
-                    🗑
-                </button>
-            </td>
-        `;
+                    <button
+                        data-cancel
+                        title="Cancel">
+                        ✕
+                    </button>
+                </td>
+            `;
+        } else {
+            tr.innerHTML = `
+                <td class="handle ${allowDrag ? '' : 'hidden'}">
+                    ☰
+                </td>
+
+                <td>
+                    ${escapeHtml(item.word)}
+                </td>
+
+                <td>
+                    ${escapeHtml(item.translation)}
+                </td>
+
+                <td class="actions">
+                    <button
+                        data-edit="${item.id}"
+                        title="Edit">
+                        ✏
+                    </button>
+
+                    <button
+                        data-delete="${item.id}"
+                        title="Delete">
+                        🗑
+                    </button>
+                </td>
+            `;
+        }
 
         tbody.appendChild(tr);
     });
@@ -408,6 +464,27 @@ function bindButtons() {
 
     document
         .querySelectorAll(
+            '[data-save]'
+        )
+        .forEach(btn => {
+            btn.onclick =
+                () =>
+                    saveEdit(
+                        btn.dataset.save
+                    );
+        });
+
+    document
+        .querySelectorAll(
+            '[data-cancel]'
+        )
+        .forEach(btn => {
+            btn.onclick =
+                cancelEdit;
+        });
+
+    document
+        .querySelectorAll(
             '[data-delete]'
         )
         .forEach(btn => {
@@ -416,6 +493,35 @@ function bindButtons() {
                     removeWord(
                         btn.dataset.delete
                     );
+        });
+
+    document
+        .querySelectorAll(
+            'tr[data-id] input'
+        )
+        .forEach(input => {
+            input.addEventListener(
+                'keydown',
+                e => {
+                    if (
+                        e.key === 'Enter'
+                    ) {
+                        saveEdit(
+                            input
+                                .closest(
+                                    'tr'
+                                )
+                                .dataset.id
+                        );
+                    }
+
+                    if (
+                        e.key === 'Escape'
+                    ) {
+                        cancelEdit();
+                    }
+                }
+            );
         });
 }
 
@@ -518,6 +624,18 @@ function escapeHtml(text) {
         .replaceAll(
             '>',
             '&gt;'
+        );
+}
+
+function escapeAttr(text) {
+    return escapeHtml(text)
+        .replaceAll(
+            '"',
+            '&quot;'
+        )
+        .replaceAll(
+            "'",
+            '&#39;'
         );
 }
 </script>
