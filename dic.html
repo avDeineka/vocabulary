@@ -400,18 +400,75 @@ function getActiveLesson() {
     );
 }
 
-function setLessonMode(mode) {
-    state.lessonMode = mode;
-}
-
-function setVocabularyMode(mode, wordId = null) {
-    state.vocabMode = mode;
-    state.activeWordId = wordId;
-}
-
 function setActiveLesson(id) {
     state.activeLessonId = id;
     setVocabularyMode('view');
+}
+
+function getRowModeScope(scope) {
+    return scope === 'lesson'
+        ? {
+              modeField: 'lessonMode',
+              activeIdField: 'activeLessonId'
+          }
+        : {
+              modeField: 'vocabMode',
+              activeIdField: 'activeWordId'
+          };
+}
+
+function setRowMode(scope, mode, rowId = null) {
+    const config = getRowModeScope(scope);
+
+    state[config.modeField] = mode;
+    state[config.activeIdField] = rowId;
+}
+
+function getRowMode(scope) {
+    const config = getRowModeScope(scope);
+
+    return {
+        mode: state[config.modeField],
+        activeId: state[config.activeIdField]
+    };
+}
+
+function isRowMode(scope, rowId, mode) {
+    const current = getRowMode(scope);
+
+    return (
+        current.mode === mode &&
+        current.activeId === rowId
+    );
+}
+
+function setViewMode(scope) {
+    setRowMode(scope, 'view');
+}
+
+function setManageableMode(scope, rowId) {
+    setRowMode(scope, 'manageable', rowId);
+}
+
+function setEditMode(scope, rowId) {
+    setRowMode(scope, 'edit', rowId);
+}
+
+function toggleManageableRow(scope, rowId) {
+    if (isRowMode(scope, rowId, 'manageable')) {
+        setViewMode(scope);
+        return;
+    }
+
+    setManageableMode(scope, rowId);
+}
+
+function setLessonMode(mode, lessonId = null) {
+    setRowMode('lesson', mode, lessonId);
+}
+
+function setVocabularyMode(mode, wordId = null) {
+    setRowMode('vocab', mode, wordId);
 }
 
 function toggleColumn(column) {
@@ -454,14 +511,14 @@ function addLesson() {
 
     titleInput.value = '';
     setActiveLesson(lesson.id);
-    setLessonMode('view');
+    setViewMode('lesson');
 
     renderAll();
 }
 
 function editLesson(id) {
     setActiveLesson(id);
-    setLessonMode('edit');
+    setEditMode('lesson', id);
     renderAll();
 }
 
@@ -497,13 +554,13 @@ function saveLessonEdit(id) {
 
     lesson.title = title;
 
-    setLessonMode('view');
+    setViewMode('lesson');
     save();
     renderAll();
 }
 
 function cancelLessonEdit() {
-    setLessonMode('view');
+    setViewMode('lesson');
     renderAll();
 }
 
@@ -534,8 +591,8 @@ function removeLesson(id) {
         ];
 
     setActiveLesson(nextLesson.id);
-    setLessonMode('view');
-    setVocabularyMode('view');
+    setViewMode('lesson');
+    setViewMode('vocab');
 
     save();
     renderAll();
@@ -588,7 +645,7 @@ function addWord() {
 }
 
 function editWord(id) {
-    setVocabularyMode('edit', id);
+    setEditMode('vocab', id);
     renderVocabulary();
 }
 
@@ -639,13 +696,13 @@ function saveWordEdit(id) {
     item.translation =
         translationInput.value.trim();
 
-    setVocabularyMode('view');
+    setViewMode('vocab');
     save();
     renderVocabulary();
 }
 
 function cancelWordEdit() {
-    setVocabularyMode('view');
+    setViewMode('vocab');
     renderVocabulary();
 }
 
@@ -665,7 +722,7 @@ function removeWord(id) {
     delete state.revealedCells.translation[id];
 
     if (state.activeWordId === id) {
-        setVocabularyMode('view');
+        setViewMode('vocab');
     }
 
     save();
@@ -739,18 +796,19 @@ function renderLessons() {
         );
         tr.classList.toggle(
             'manageable',
-            state.lessonMode === 'manageable' &&
-            state.activeLessonId === lesson.id
+            isRowMode(
+                'lesson',
+                lesson.id,
+                'manageable'
+            )
         );
         tr.classList.toggle(
             'editing',
-            state.lessonMode === 'edit' &&
-            state.activeLessonId === lesson.id
+            isRowMode('lesson', lesson.id, 'edit')
         );
 
         if (
-            state.lessonMode === 'edit' &&
-            state.activeLessonId === lesson.id
+            isRowMode('lesson', lesson.id, 'edit')
         ) {
             tr.innerHTML = `
                 <td
@@ -792,8 +850,11 @@ function renderLessons() {
                 </td>
 
                 <td class="actions ${
-                    state.lessonMode === 'manageable' &&
-                    state.activeLessonId === lesson.id
+                    isRowMode(
+                        'lesson',
+                        lesson.id,
+                        'manageable'
+                    )
                         ? ''
                         : 'hidden'
                 }">
@@ -845,18 +906,19 @@ function renderVocabulary() {
         );
         tr.classList.toggle(
             'manageable',
-            state.vocabMode === 'manageable' &&
-            state.activeWordId === item.id
+            isRowMode(
+                'vocab',
+                item.id,
+                'manageable'
+            )
         );
         tr.classList.toggle(
             'editing',
-            state.vocabMode === 'edit' &&
-            state.activeWordId === item.id
+            isRowMode('vocab', item.id, 'edit')
         );
 
         if (
-            state.vocabMode === 'edit' &&
-            state.activeWordId === item.id
+            isRowMode('vocab', item.id, 'edit')
         ) {
             tr.innerHTML = `
                 <td
@@ -924,8 +986,11 @@ function renderVocabulary() {
                 </td>
 
                 <td class="actions ${
-                    state.vocabMode === 'manageable' &&
-                    state.activeWordId === item.id
+                    isRowMode(
+                        'vocab',
+                        item.id,
+                        'manageable'
+                    )
                         ? ''
                         : 'hidden'
                 }">
@@ -1092,18 +1157,8 @@ function handleLessonsClick(e) {
         return;
     }
 
-    const clickedId = row.dataset.id;
-    const wasManaged =
-        state.lessonMode === 'manageable' &&
-        state.activeLessonId === clickedId;
-
-    setActiveLesson(clickedId);
-
-    if (wasManaged) {
-        setLessonMode('view');
-    } else {
-        setLessonMode('manageable');
-    }
+    setActiveLesson(row.dataset.id);
+    toggleManageableRow('lesson', row.dataset.id);
 
     e.stopPropagation();
     renderAll();
@@ -1175,19 +1230,7 @@ function handleVocabularyClick(e) {
         return;
     }
 
-    const clickedId = row.dataset.id;
-    const wasManaged =
-        state.vocabMode === 'manageable' &&
-        state.activeWordId === clickedId;
-
-    if (wasManaged) {
-        setVocabularyMode('view');
-    } else {
-        setVocabularyMode(
-            'manageable',
-            clickedId
-        );
-    }
+    toggleManageableRow('vocab', row.dataset.id);
 
     e.stopPropagation();
     renderVocabulary();
@@ -1228,12 +1271,12 @@ function handleOutsideClick(e) {
     let needsRender = false;
 
     if (state.lessonMode === 'manageable') {
-        setLessonMode('view');
+        setViewMode('lesson');
         needsRender = true;
     }
 
     if (state.vocabMode === 'manageable') {
-        setVocabularyMode('view');
+        setViewMode('vocab');
         needsRender = true;
     }
 
