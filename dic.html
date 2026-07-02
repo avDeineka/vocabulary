@@ -122,69 +122,123 @@ tr.manageable td {
 tr.editing td {
     background: #2c2c2c;
 }
+
+.workspace {
+    display: flex;
+    gap: 18px;
+    align-items: flex-start;
+}
+
+.panel {
+    min-width: 0;
+}
+
+.lessons-panel {
+    flex: 0 0 290px;
+}
+
+.vocabulary-panel {
+    flex: 1;
+}
+
+.panel h2 {
+    margin: 0;
+    font-weight: normal;
+}
+
+.panel-title {
+    margin-bottom: 12px;
+}
+
+tr.selected:not(.manageable):not(.editing) td {
+    background: #262626;
+}
 </style>
 </head>
 
 <body>
 
-<div class="header">
-    <h2>Vocabulary</h2>
+<div class="workspace">
+    <section class="panel lessons-panel">
+        <div class="panel-title">
+            <h2>Lessons</h2>
+        </div>
 
-    <select id="sortMode">
-        <option value="original">
-            Original order
-        </option>
+        <table>
+            <thead>
+            <tr>
+                <th></th>
+                <th>Lesson</th>
+                <th></th>
+            </tr>
+            </thead>
 
-        <option value="reverse">
-            Reverse order
-        </option>
+            <tbody id="lessonsTbody"></tbody>
+        </table>
+    </section>
 
-        <option value="alphabetic">
-            Alphabetic
-        </option>
+    <section class="panel vocabulary-panel">
+        <div class="header">
+            <h2 id="vocabularyTitle">Vocabulary</h2>
 
-        <option value="random">
-            Random
-        </option>
-    </select>
+            <select id="sortMode">
+                <option value="original">
+                    Original order
+                </option>
+
+                <option value="reverse">
+                    Reverse order
+                </option>
+
+                <option value="alphabetic">
+                    Alphabetic
+                </option>
+
+                <option value="random">
+                    Random
+                </option>
+            </select>
+        </div>
+
+        <table>
+            <thead>
+            <tr>
+                <th></th>
+                <th>
+                    Word
+                    <button
+                        class="column-toggle"
+                        data-toggle-column="word"
+                        title="Toggle word column">
+                        [?]
+                    </button>
+                </th>
+                <th>
+                    Translation
+                    <button
+                        class="column-toggle"
+                        data-toggle-column="translation"
+                        title="Toggle translation column">
+                        [?]
+                    </button>
+                </th>
+                <th></th>
+            </tr>
+            </thead>
+
+            <tbody id="vocabTbody"></tbody>
+        </table>
+    </section>
 </div>
 
-<table>
-    <thead>
-    <tr>
-        <th></th>
-        <th>
-            Word
-            <button
-                class="column-toggle"
-                data-toggle-column="word"
-                title="Toggle word column">
-                [?]
-            </button>
-        </th>
-        <th>
-            Translation
-            <button
-                class="column-toggle"
-                data-toggle-column="translation"
-                title="Toggle translation column">
-                [?]
-            </button>
-        </th>
-        <th></th>
-    </tr>
-    </thead>
-
-    <tbody id="tbody">
-    </tbody>
-</table>
-
 <script>
-// Central application state: sorting, row modes, and column visibility live here.
+// Central application state: lesson selection, row modes, sort mode, and column visibility live here.
 const state = {
     sortMode: 'original',
-    rowMode: 'view',
-    activeRowId: null,
+    lessonMode: 'view',
+    activeLessonId: null,
+    vocabMode: 'view',
+    activeWordId: null,
     hiddenColumns: {
         word: false,
         translation: false
@@ -195,32 +249,312 @@ const state = {
     }
 };
 
-let words = [];
+let lessons = [];
+
+const lessonsTbody =
+    document.getElementById(
+        'lessonsTbody'
+    );
+
+const vocabTbody =
+    document.getElementById(
+        'vocabTbody'
+    );
+
+const vocabularyTitle =
+    document.getElementById(
+        'vocabularyTitle'
+    );
 
 load();
-render();
+ensureActiveLesson();
+renderAll();
 
 document.getElementById('sortMode').onchange = e => {
     state.sortMode = e.target.value;
-    state.rowMode = 'view';
-    state.activeRowId = null;
-    render();
+    setVocabularyMode('view');
+    renderVocabulary();
 };
 
+lessonsTbody.addEventListener(
+    'click',
+    handleLessonsClick
+);
+
+vocabTbody.addEventListener(
+    'click',
+    handleVocabularyClick
+);
+
+document.body.addEventListener(
+    'click',
+    handleOutsideClick
+);
+
+document
+    .querySelectorAll(
+        '[data-toggle-column]'
+    )
+    .forEach(btn => {
+        btn.addEventListener(
+            'click',
+            () => {
+                toggleColumn(
+                    btn.dataset.toggleColumn
+                );
+            }
+        );
+    });
+
 function load() {
-    words = JSON.parse(
+    const storedLessons = JSON.parse(
+        localStorage.getItem('lessons') ?? 'null'
+    );
+
+    if (
+        Array.isArray(storedLessons) &&
+        storedLessons.length
+    ) {
+        lessons = storedLessons.map(
+            normalizeLesson
+        );
+        return;
+    }
+
+    const oldWords = JSON.parse(
         localStorage.getItem('words') ?? '[]'
     );
+
+    lessons = [
+        createLesson(
+            defaultLessonTitle(1),
+            oldWords.map(normalizeWord)
+        )
+    ];
 }
 
 function save() {
     localStorage.setItem(
-        'words',
-        JSON.stringify(words)
+        'lessons',
+        JSON.stringify(lessons)
     );
 }
 
+function createLesson(title, words = []) {
+    return {
+        id: crypto.randomUUID(),
+        title,
+        words
+    };
+}
+
+function defaultLessonTitle(number) {
+    return `L${number}.`;
+}
+
+function normalizeWord(item) {
+    return {
+        id: item?.id ?? crypto.randomUUID(),
+        word: String(item?.word ?? '').trim(),
+        translation: String(
+            item?.translation ??
+            item?.transtalion ??
+            ''
+        ).trim()
+    };
+}
+
+function normalizeLesson(item, index) {
+    return {
+        id: item?.id ?? crypto.randomUUID(),
+        title:
+            String(item?.title ?? '').trim() ||
+            defaultLessonTitle(index + 1),
+        words: Array.isArray(item?.words)
+            ? item.words.map(normalizeWord)
+            : []
+    };
+}
+
+function ensureActiveLesson() {
+    if (!lessons.length) {
+        lessons.push(
+            createLesson(defaultLessonTitle(1))
+        );
+    }
+
+    if (!getLessonById(state.activeLessonId)) {
+        state.activeLessonId = lessons[0].id;
+    }
+}
+
+function getLessonById(id) {
+    return lessons.find(lesson => lesson.id === id) ?? null;
+}
+
+function getActiveLesson() {
+    return (
+        getLessonById(state.activeLessonId) ??
+        lessons[0] ??
+        null
+    );
+}
+
+function setLessonMode(mode) {
+    state.lessonMode = mode;
+}
+
+function setVocabularyMode(mode, wordId = null) {
+    state.vocabMode = mode;
+    state.activeWordId = wordId;
+}
+
+function setActiveLesson(id) {
+    state.activeLessonId = id;
+    setVocabularyMode('view');
+}
+
+function toggleColumn(column) {
+    state.hiddenColumns[column] =
+        !state.hiddenColumns[column];
+
+    if (!state.hiddenColumns[column]) {
+        state.revealedCells[column] = {};
+    }
+
+    renderVocabulary();
+}
+
+function revealCell(column, rowId) {
+    state.revealedCells[column][rowId] = true;
+    renderVocabulary();
+}
+
+function isCellRevealed(column, rowId) {
+    return Boolean(
+        state.revealedCells[column][rowId]
+    );
+}
+
+function addLesson() {
+    const titleInput =
+        document.getElementById(
+            'newLessonTitle'
+        );
+
+    const title =
+        titleInput.value.trim() ||
+        defaultLessonTitle(lessons.length + 1);
+
+    const lesson =
+        createLesson(title);
+
+    lessons.push(lesson);
+    save();
+
+    titleInput.value = '';
+    setActiveLesson(lesson.id);
+    setLessonMode('view');
+
+    renderAll();
+}
+
+function editLesson(id) {
+    setActiveLesson(id);
+    setLessonMode('edit');
+    renderAll();
+}
+
+function saveLessonEdit(id) {
+    const lesson =
+        getLessonById(id);
+
+    if (!lesson) {
+        return;
+    }
+
+    const row =
+        lessonsTbody.querySelector(
+            `tr[data-id="${id}"]`
+        );
+
+    if (!row) {
+        return;
+    }
+
+    const titleInput =
+        row.querySelector(
+            '[data-field="title"]'
+        );
+
+    const title =
+        titleInput.value.trim() ||
+        defaultLessonTitle(
+            lessons.findIndex(
+                item => item.id === id
+            ) + 1
+        );
+
+    lesson.title = title;
+
+    setLessonMode('view');
+    save();
+    renderAll();
+}
+
+function cancelLessonEdit() {
+    setLessonMode('view');
+    renderAll();
+}
+
+function removeLesson(id) {
+    const index =
+        lessons.findIndex(
+            lesson => lesson.id === id
+        );
+
+    if (index < 0) {
+        return;
+    }
+
+    const [removed] =
+        lessons.splice(index, 1);
+
+    cleanupCellStateForLesson(removed);
+
+    if (!lessons.length) {
+        lessons.push(
+            createLesson(defaultLessonTitle(1))
+        );
+    }
+
+    const nextLesson =
+        lessons[
+            Math.min(index, lessons.length - 1)
+        ];
+
+    setActiveLesson(nextLesson.id);
+    setLessonMode('view');
+    setVocabularyMode('view');
+
+    save();
+    renderAll();
+}
+
+function cleanupCellStateForLesson(lesson) {
+    lesson.words.forEach(word => {
+        delete state.revealedCells.word[word.id];
+        delete state.revealedCells.translation[word.id];
+    });
+}
+
 function addWord() {
+    const lesson = getActiveLesson();
+
+    if (!lesson) {
+        return;
+    }
+
     const wordInput =
         document.getElementById('newWord');
 
@@ -238,7 +572,7 @@ function addWord() {
         return;
     }
 
-    words.push({
+    lesson.words.push({
         id: crypto.randomUUID(),
         word,
         translation
@@ -249,52 +583,33 @@ function addWord() {
     wordInput.value = '';
     translationInput.value = '';
 
-    render();
+    renderVocabulary();
     wordInput.focus();
 }
 
-function setRowMode(mode, rowId = null) {
-    state.rowMode = mode;
-    state.activeRowId = rowId;
+function editWord(id) {
+    setVocabularyMode('edit', id);
+    renderVocabulary();
 }
 
-function toggleColumn(column) {
-    state.hiddenColumns[column] =
-        !state.hiddenColumns[column];
+function saveWordEdit(id) {
+    const lesson = getActiveLesson();
 
-    if (!state.hiddenColumns[column]) {
-        state.revealedCells[column] = {};
+    if (!lesson) {
+        return;
     }
 
-    render();
-}
-
-function revealCell(column, rowId) {
-    state.revealedCells[column][rowId] = true;
-    render();
-}
-
-function isCellRevealed(column, rowId) {
-    return Boolean(
-        state.revealedCells[column][rowId]
-    );
-}
-
-function editWord(id) {
-    setRowMode('edit', id);
-    render();
-}
-
-function saveEdit(id) {
     const item =
-        words.find(x => x.id === id);
+        lesson.words.find(
+            word => word.id === id
+        );
 
     if (!item) {
         return;
     }
 
     const row =
-        document.querySelector(
+        vocabTbody.querySelector(
             `tr[data-id="${id}"]`
         );
 
@@ -324,39 +639,53 @@ function saveEdit(id) {
     item.translation =
         translationInput.value.trim();
 
-    setRowMode('view');
+    setVocabularyMode('view');
     save();
-    render();
+    renderVocabulary();
 }
 
-function cancelEdit() {
-    setRowMode('view');
-    render();
+function cancelWordEdit() {
+    setVocabularyMode('view');
+    renderVocabulary();
 }
 
 function removeWord(id) {
-    words =
-        words.filter(x => x.id !== id);
+    const lesson = getActiveLesson();
+
+    if (!lesson) {
+        return;
+    }
+
+    lesson.words =
+        lesson.words.filter(
+            word => word.id !== id
+        );
 
     delete state.revealedCells.word[id];
     delete state.revealedCells.translation[id];
 
-    if (state.activeRowId === id) {
-        setRowMode('view');
+    if (state.activeWordId === id) {
+        setVocabularyMode('view');
     }
 
     save();
-    render();
+    renderVocabulary();
 }
 
 function getDisplayedWords() {
+    const lesson = getActiveLesson();
+
+    if (!lesson) {
+        return [];
+    }
+
     switch (state.sortMode) {
 
         case 'reverse':
-            return [...words].reverse();
+            return [...lesson.words].reverse();
 
         case 'alphabetic':
-            return [...words].sort(
+            return [...lesson.words].sort(
                 (a, b) =>
                     a.word.localeCompare(
                         b.word
@@ -364,10 +693,10 @@ function getDisplayedWords() {
             );
 
         case 'random':
-            return shuffle([...words]);
+            return shuffle([...lesson.words]);
 
         default:
-            return words;
+            return lesson.words;
     }
 }
 
@@ -390,20 +719,120 @@ function shuffle(arr) {
     return copy;
 }
 
-function render() {
-    const tbody =
-        document.getElementById(
-            'tbody'
+function renderAll() {
+    ensureActiveLesson();
+    renderLessons();
+    renderVocabulary();
+}
+
+function renderLessons() {
+    lessonsTbody.innerHTML = '';
+
+    lessons.forEach((lesson, index) => {
+        const tr =
+            document.createElement('tr');
+
+        tr.dataset.id = lesson.id;
+        tr.classList.toggle(
+            'selected',
+            lesson.id === state.activeLessonId
+        );
+        tr.classList.toggle(
+            'manageable',
+            state.lessonMode === 'manageable' &&
+            state.activeLessonId === lesson.id
+        );
+        tr.classList.toggle(
+            'editing',
+            state.lessonMode === 'edit' &&
+            state.activeLessonId === lesson.id
         );
 
-    tbody.innerHTML = '';
+        if (
+            state.lessonMode === 'edit' &&
+            state.activeLessonId === lesson.id
+        ) {
+            tr.innerHTML = `
+                <td
+                    class="handle hidden"
+                    draggable="false">
+                    ☰
+                </td>
 
-    const displayed =
-        getDisplayedWords();
+                <td>
+                    <input
+                        data-field="title"
+                        value="${escapeAttr(lesson.title)}">
+                </td>
+
+                <td class="actions">
+                    <button
+                        data-save-lesson="${lesson.id}"
+                        title="Save">
+                        💾
+                    </button>
+
+                    <button
+                        data-cancel-lesson
+                        title="Cancel">
+                        ✕
+                    </button>
+                </td>
+            `;
+        } else {
+            tr.innerHTML = `
+                <td
+                    class="handle"
+                    draggable="true">
+                    ☰
+                </td>
+
+                <td>
+                    ${escapeHtml(lesson.title)}
+                </td>
+
+                <td class="actions ${
+                    state.lessonMode === 'manageable' &&
+                    state.activeLessonId === lesson.id
+                        ? ''
+                        : 'hidden'
+                }">
+                    <button
+                        data-edit-lesson="${lesson.id}"
+                        title="Edit">
+                        ✏
+                    </button>
+
+                    <button
+                        data-delete-lesson="${lesson.id}"
+                        title="Delete">
+                        🗑
+                    </button>
+                </td>
+            `;
+        }
+
+        lessonsTbody.appendChild(tr);
+    });
+
+    appendAddLessonRow();
+    bindLessonDnD();
+}
+
+function renderVocabulary() {
+    const lesson = getActiveLesson();
+
+    vocabularyTitle.textContent = lesson
+        ? `Vocabulary — ${lesson.title}`
+        : 'Vocabulary';
+
+    vocabTbody.innerHTML = '';
+
+    const displayed = getDisplayedWords();
 
     const allowDrag =
         state.sortMode === 'original' &&
-        state.rowMode !== 'edit';
+        state.vocabMode !== 'edit';
 
     displayed.forEach(item => {
         const tr =
@@ -411,19 +840,23 @@ function render() {
 
         tr.dataset.id = item.id;
         tr.classList.toggle(
+            'selected',
+            state.activeWordId === item.id
+        );
+        tr.classList.toggle(
             'manageable',
-            state.rowMode === 'manageable' &&
-            state.activeRowId === item.id
+            state.vocabMode === 'manageable' &&
+            state.activeWordId === item.id
         );
         tr.classList.toggle(
             'editing',
-            state.rowMode === 'edit' &&
-            state.activeRowId === item.id
+            state.vocabMode === 'edit' &&
+            state.activeWordId === item.id
         );
 
         if (
-            state.rowMode === 'edit' &&
-            state.activeRowId === item.id
+            state.vocabMode === 'edit' &&
+            state.activeWordId === item.id
         ) {
             tr.innerHTML = `
                 <td
@@ -446,13 +879,13 @@ function render() {
 
                 <td class="actions">
                     <button
-                        data-save="${item.id}"
+                        data-save-word="${item.id}"
                         title="Save">
                         💾
                     </button>
 
                     <button
-                        data-cancel
+                        data-cancel-word
                         title="Cancel">
                         ✕
                     </button>
@@ -468,11 +901,11 @@ function render() {
 
                 <td>
                     ${
-                        state.hiddenColumns.word
-                            && !isCellRevealed(
-                                'word',
-                                item.id
-                            )
+                        state.hiddenColumns.word &&
+                        !isCellRevealed(
+                            'word',
+                            item.id
+                        )
                             ? `<button class="cell-placeholder" data-reveal-cell="word" data-row-id="${item.id}">[????]</button>`
                             : escapeHtml(item.word)
                     }
@@ -480,49 +913,80 @@ function render() {
 
                 <td>
                     ${
-                        state.hiddenColumns.translation
-                            && !isCellRevealed(
-                                'translation',
-                                item.id
-                            )
+                        state.hiddenColumns.translation &&
+                        !isCellRevealed(
+                            'translation',
+                            item.id
+                        )
                             ? `<button class="cell-placeholder" data-reveal-cell="translation" data-row-id="${item.id}">[????]</button>`
                             : escapeHtml(item.translation)
                     }
                 </td>
 
                 <td class="actions ${
-                    state.rowMode === 'manageable' &&
-                    state.activeRowId === item.id
+                    state.vocabMode === 'manageable' &&
+                    state.activeWordId === item.id
                         ? ''
                         : 'hidden'
                 }">
                     <button
-                        data-edit="${item.id}"
+                        data-edit-word="${item.id}"
                         title="Edit">✏</button>
                     <button
-                        data-delete="${item.id}"
+                        data-delete-word="${item.id}"
                         title="Delete">🗑</button>
                 </td>
             `;
         }
 
-        tbody.appendChild(tr);
+        vocabTbody.appendChild(tr);
     });
 
-    appendAddRow();
-    bindButtons();
-
-    if (allowDrag) {
-        bindDnD();
-    }
+    appendAddWordRow();
+    bindVocabularyDnD();
 }
 
-function appendAddRow() {
-    const tbody =
-        document.getElementById(
-            'tbody'
-        );
+function appendAddLessonRow() {
+    const tr =
+        document.createElement('tr');
 
+    tr.innerHTML = `
+        <td>＋</td>
+
+        <td>
+            <input
+                id="newLessonTitle"
+                placeholder="lesson title">
+        </td>
+
+        <td class="actions">
+            <button
+                id="addLessonBtn"
+                title="Add">
+                ➕
+            </button>
+        </td>
+    `;
+
+    lessonsTbody.appendChild(tr);
+
+    document.getElementById(
+        'addLessonBtn'
+    ).onclick = addLesson;
+
+    document
+        .getElementById('newLessonTitle')
+        .addEventListener(
+            'keydown',
+            e => {
+                if (e.key === 'Enter') {
+                    addLesson();
+                }
+            }
+        );
+}
+
+function appendAddWordRow() {
     const tr =
         document.createElement('tr');
 
@@ -543,17 +1007,17 @@ function appendAddRow() {
 
         <td class="actions">
             <button
-                id="addBtn"
+                id="addWordBtn"
                 title="Add">
                 ➕
             </button>
         </td>
     `;
 
-    tbody.appendChild(tr);
+    vocabTbody.appendChild(tr);
 
     document.getElementById(
-        'addBtn'
+        'addWordBtn'
     ).onclick = addWord;
 
     const onEnter = e => {
@@ -570,183 +1034,222 @@ function appendAddRow() {
         );
 
     document
-        .getElementById(
-            'newTranslation'
-        )
+        .getElementById('newTranslation')
         .addEventListener(
             'keydown',
             onEnter
         );
 }
 
-function bindButtons() {
-    document
-        .querySelector(
-            'tbody'
-        ).onclick = e => {
-            const row =
-                e.target.closest(
-                    'tr[data-id]'
-                );
-            const interactive =
-                e.target.closest(
-                    'button, input, .handle'
-                );
+function handleLessonsClick(e) {
+    const button =
+        e.target.closest('button');
 
-            if (
-                !row ||
-                interactive
-            ) {
-                return;
-            }
-
-            if (state.rowMode === 'edit') {
-                return;
-            }
-
-            if (
-                state.rowMode === 'manageable' &&
-                state.activeRowId === row.dataset.id
-            ) {
-                setRowMode('view');
-            } else {
-                setRowMode(
-                    'manageable',
-                    row.dataset.id
-                );
-            }
-            render();
-        };
-
-    document.body.onclick = e => {
-        if (
-            e.target.closest('tr[data-id]') ||
-            e.target.closest('#sortMode') ||
-            e.target.closest('#addBtn') ||
-            e.target.closest('#newWord') ||
-            e.target.closest('#newTranslation')
-        ) {
+    if (button) {
+        if (button.dataset.editLesson) {
+            editLesson(
+                button.dataset.editLesson
+            );
             return;
         }
 
-        if (
-            state.rowMode === 'manageable'
-        ) {
-            setRowMode('view');
-            render();
-        }
-    };
-
-    document
-        .querySelectorAll(
-            '[data-toggle-column]'
-        )
-        .forEach(btn => {
-            btn.onclick =
-                () =>
-                    toggleColumn(
-                        btn.dataset.toggleColumn
-                    );
-        });
-
-    document
-        .querySelectorAll(
-            '[data-reveal-cell]'
-        )
-        .forEach(btn => {
-            btn.onclick =
-                () => {
-                    revealCell(
-                        btn.dataset.revealCell,
-                        btn.dataset.rowId
-                    );
-                };
-        });
-
-    document
-        .querySelectorAll(
-            '[data-edit]'
-        )
-        .forEach(btn => {
-            btn.onclick =
-                () =>
-                    editWord(
-                        btn.dataset.edit
-                    );
-        });
-
-    document
-        .querySelectorAll(
-            '[data-save]'
-        )
-        .forEach(btn => {
-            btn.onclick =
-                () =>
-                    saveEdit(
-                        btn.dataset.save
-                    );
-        });
-
-    document
-        .querySelectorAll(
-            '[data-cancel]'
-        )
-        .forEach(btn => {
-            btn.onclick =
-                cancelEdit;
-        });
-
-    document
-        .querySelectorAll(
-            '[data-delete]'
-        )
-        .forEach(btn => {
-            btn.onclick =
-                () =>
-                    removeWord(
-                        btn.dataset.delete
-                    );
-        });
-
-    document
-        .querySelectorAll(
-            'tr[data-id] input'
-        )
-        .forEach(input => {
-            input.addEventListener(
-                'keydown',
-                e => {
-                    if (
-                        e.key === 'Enter'
-                    ) {
-                        saveEdit(
-                            input
-                                .closest(
-                                    'tr'
-                                )
-                                .dataset.id
-                        );
-                    }
-
-                    if (
-                        e.key === 'Escape'
-                    ) {
-                        cancelEdit();
-                    }
-                }
+        if (button.dataset.saveLesson) {
+            saveLessonEdit(
+                button.dataset.saveLesson
             );
-        });
+            return;
+        }
+
+        if (button.dataset.cancelLesson !== undefined) {
+            cancelLessonEdit();
+            return;
+        }
+
+        if (button.dataset.deleteLesson) {
+            removeLesson(
+                button.dataset.deleteLesson
+            );
+            return;
+        }
+
+        if (button.id === 'addLessonBtn') {
+            addLesson();
+            return;
+        }
+    }
+
+    const row =
+        e.target.closest('tr[data-id]');
+
+    if (
+        !row ||
+        e.target.closest('input, .handle')
+    ) {
+        return;
+    }
+
+    if (state.lessonMode === 'edit') {
+        return;
+    }
+
+    const clickedId = row.dataset.id;
+    const wasManaged =
+        state.lessonMode === 'manageable' &&
+        state.activeLessonId === clickedId;
+
+    setActiveLesson(clickedId);
+
+    if (wasManaged) {
+        setLessonMode('view');
+    } else {
+        setLessonMode('manageable');
+    }
+
+    e.stopPropagation();
+    renderAll();
 }
 
-function bindDnD() {
+function handleVocabularyClick(e) {
+    const button =
+        e.target.closest('button');
+
+    if (button) {
+        if (button.dataset.toggleColumn) {
+            toggleColumn(
+                button.dataset.toggleColumn
+            );
+            return;
+        }
+
+        if (button.dataset.revealCell) {
+            revealCell(
+                button.dataset.revealCell,
+                button.dataset.rowId
+            );
+            return;
+        }
+
+        if (button.dataset.editWord) {
+            editWord(
+                button.dataset.editWord
+            );
+            return;
+        }
+
+        if (button.dataset.saveWord) {
+            saveWordEdit(
+                button.dataset.saveWord
+            );
+            return;
+        }
+
+        if (button.dataset.cancelWord !== undefined) {
+            cancelWordEdit();
+            return;
+        }
+
+        if (button.dataset.deleteWord) {
+            removeWord(
+                button.dataset.deleteWord
+            );
+            return;
+        }
+
+        if (button.id === 'addWordBtn') {
+            addWord();
+            return;
+        }
+    }
+
+    const row =
+        e.target.closest('tr[data-id]');
+
+    if (
+        !row ||
+        e.target.closest('input, .handle')
+    ) {
+        return;
+    }
+
+    if (state.vocabMode === 'edit') {
+        return;
+    }
+
+    const clickedId = row.dataset.id;
+    const wasManaged =
+        state.vocabMode === 'manageable' &&
+        state.activeWordId === clickedId;
+
+    if (wasManaged) {
+        setVocabularyMode('view');
+    } else {
+        setVocabularyMode(
+            'manageable',
+            clickedId
+        );
+    }
+
+    e.stopPropagation();
+    renderVocabulary();
+}
+
+function handleOutsideClick(e) {
+    const path =
+        typeof e.composedPath === 'function'
+            ? e.composedPath()
+            : [];
+
+    if (
+        path.includes(lessonsTbody) ||
+        path.includes(vocabTbody) ||
+        path.includes(
+            document.getElementById('sortMode')
+        ) ||
+        path.some(node =>
+            node?.matches?.('[data-toggle-column]')
+        ) ||
+        path.includes(
+            document.getElementById(
+                'newLessonTitle'
+            )
+        ) ||
+        path.includes(
+            document.getElementById('newWord')
+        ) ||
+        path.includes(
+            document.getElementById(
+                'newTranslation'
+            )
+        )
+    ) {
+        return;
+    }
+
+    let needsRender = false;
+
+    if (state.lessonMode === 'manageable') {
+        setLessonMode('view');
+        needsRender = true;
+    }
+
+    if (state.vocabMode === 'manageable') {
+        setVocabularyMode('view');
+        needsRender = true;
+    }
+
+    if (needsRender) {
+        renderAll();
+    }
+}
+
+function bindLessonDnD() {
     let dragged = null;
 
-    document
+    lessonsTbody
         .querySelectorAll(
-            'tbody tr[data-id] .handle'
+            'tr[data-id] .handle'
         )
         .forEach(handle => {
-
             handle.addEventListener(
                 'dragstart',
                 () => {
@@ -771,12 +1274,11 @@ function bindDnD() {
             );
         });
 
-    document
+    lessonsTbody
         .querySelectorAll(
-            'tbody tr[data-id]'
+            'tr[data-id]'
         )
         .forEach(row => {
-
             row.addEventListener(
                 'dragover',
                 e => {
@@ -798,45 +1300,139 @@ function bindDnD() {
 
                     const fromId =
                         dragged.dataset.id;
-
                     const toId =
                         row.dataset.id;
 
-                    const from =
-                        words.findIndex(
-                            x =>
-                                x.id ===
-                                fromId
+                    const fromIndex =
+                        lessons.findIndex(
+                            lesson =>
+                                lesson.id === fromId
                         );
-
-                    const to =
-                        words.findIndex(
-                            x =>
-                                x.id ===
-                                toId
+                    const toIndex =
+                        lessons.findIndex(
+                            lesson =>
+                                lesson.id === toId
                         );
 
                     const [item] =
-                        words.splice(
-                            from,
+                        lessons.splice(
+                            fromIndex,
                             1
                         );
 
-                    words.splice(
-                        to,
+                    lessons.splice(
+                        toIndex,
                         0,
                         item
                     );
 
                     save();
-                    render();
+                    renderLessons();
+                }
+            );
+        });
+}
+
+function bindVocabularyDnD() {
+    let dragged = null;
+
+    vocabTbody
+        .querySelectorAll(
+            'tr[data-id] .handle'
+        )
+        .forEach(handle => {
+            handle.addEventListener(
+                'dragstart',
+                () => {
+                    dragged =
+                        handle.closest('tr');
+                    dragged.classList.add(
+                        'dragging'
+                    );
+                }
+            );
+
+            handle.addEventListener(
+                'dragend',
+                () => {
+                    if (dragged) {
+                        dragged.classList.remove(
+                            'dragging'
+                        );
+                    }
+                    dragged = null;
+                }
+            );
+        });
+
+    vocabTbody
+        .querySelectorAll(
+            'tr[data-id]'
+        )
+        .forEach(row => {
+            row.addEventListener(
+                'dragover',
+                e => {
+                    e.preventDefault();
+                }
+            );
+
+            row.addEventListener(
+                'drop',
+                e => {
+                    e.preventDefault();
+
+                    if (
+                        !dragged ||
+                        dragged === row
+                    ) {
+                        return;
+                    }
+
+                    const lesson =
+                        getActiveLesson();
+
+                    if (!lesson) {
+                        return;
+                    }
+
+                    const fromId =
+                        dragged.dataset.id;
+                    const toId =
+                        row.dataset.id;
+
+                    const fromIndex =
+                        lesson.words.findIndex(
+                            word =>
+                                word.id === fromId
+                        );
+                    const toIndex =
+                        lesson.words.findIndex(
+                            word =>
+                                word.id === toId
+                        );
+
+                    const [item] =
+                        lesson.words.splice(
+                            fromIndex,
+                            1
+                        );
+
+                    lesson.words.splice(
+                        toIndex,
+                        0,
+                        item
+                    );
+
+                    save();
+                    renderVocabulary();
                 }
             );
         });
 }
 
 function escapeHtml(text) {
-    return text
+    return String(text)
         .replaceAll(
             '&',
             '&amp;'
