@@ -455,14 +455,21 @@ function getActiveLesson() {
 
 function setActiveLesson(id) {
     state.activeLessonId = id;
-    setRowMode('vocab', 'view');
+    setRowMode('vocab', 'view', null);
 }
 
 function setRowMode(scope, mode, rowId = null) {
     const fields = rowModeFields[scope];
 
     state[fields.mode] = mode;
-    state[fields.activeId] = rowId;
+
+    if (arguments.length >= 3) {
+        state[fields.activeId] = rowId;
+    }
+}
+
+function confirmDelete(kind, name) {
+    return confirm(`Delete ${kind} "${name}"?`);
 }
 
 function getRowMode(scope) {
@@ -595,6 +602,12 @@ function removeLesson(id) {
         return;
     }
 
+    const lesson = lessons[index];
+
+    if (!confirmDelete('lesson', lesson.title)) {
+        return;
+    }
+
     const [removed] =
         lessons.splice(index, 1);
 
@@ -613,7 +626,7 @@ function removeLesson(id) {
 
     setActiveLesson(nextLesson.id);
     setRowMode('lesson', 'view');
-    setRowMode('vocab', 'view');
+    setRowMode('vocab', 'view', null);
 
     save();
     renderAll();
@@ -734,6 +747,19 @@ function removeWord(id) {
         return;
     }
 
+    const removed =
+        lesson.words.find(
+            word => word.id === id
+        );
+
+    if (!removed) {
+        return;
+    }
+
+    if (!confirmDelete('word', removed.word)) {
+        return;
+    }
+
     lesson.words =
         lesson.words.filter(
             word => word.id !== id
@@ -743,7 +769,7 @@ function removeWord(id) {
     delete state.revealedCells.translation[id];
 
     if (state.activeWordId === id) {
-        setRowMode('vocab', 'view');
+        setRowMode('vocab', 'view', null);
     }
 
     save();
@@ -800,7 +826,7 @@ function shuffle(arr) {
 function renderLessons() {
     lessonsTbody.innerHTML = '';
 
-    lessons.forEach((lesson, index) => {
+    lessons.forEach(lesson => {
         const tr =
             document.createElement('tr');
 
