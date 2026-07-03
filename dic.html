@@ -156,8 +156,82 @@ tr.editing td {
     margin-bottom: 12px;
 }
 
+.panel-title-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+}
+
+.panel-actions {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+
+.panel-action {
+    background: none;
+    border: none;
+    color: #aaa;
+    cursor: pointer;
+    padding: 0;
+    font-size: 16px;
+}
+
+.panel-action:hover {
+    color: #fff;
+}
+
 tr.selected:not(.manageable):not(.editing) td {
     background: #262626;
+}
+
+/* Inline format chooser modal */
+#formatModal {
+    position: fixed;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0,0,0,0.35);
+    z-index: 1000;
+}
+
+#formatModal.open {
+    display: flex;
+}
+
+#formatModal .modal {
+    background: #1f1f1f;
+    color: #ddd;
+    padding: 12px 14px;
+    border-radius: 8px;
+    min-width: 220px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+}
+
+#formatModal .modal-title {
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+#formatModal .modal-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+}
+
+#formatModal button {
+    background: #333;
+    border: 1px solid #444;
+    color: #ddd;
+    padding: 6px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+#formatModal button:hover {
+    background: #3a3a3a;
 }
 </style>
 </head>
@@ -166,8 +240,24 @@ tr.selected:not(.manageable):not(.editing) td {
 
 <div class="workspace">
     <section class="panel lessons-panel">
-        <div class="panel-title">
+        <div class="panel-title panel-title-row">
             <h2>Lessons</h2>
+
+            <div class="panel-actions">
+                <button
+                    class="panel-action"
+                    id="exportLessonsBtn"
+                    title="Export lessons">
+                    ↓
+                </button>
+
+                <button
+                    class="panel-action"
+                    id="importLessonsBtn"
+                    title="Import lessons">
+                    ↑
+                </button>
+            </div>
         </div>
 
         <table>
@@ -187,23 +277,39 @@ tr.selected:not(.manageable):not(.editing) td {
         <div class="header">
             <h2 id="vocabularyTitle">Vocabulary</h2>
 
-            <select id="sortMode">
-                <option value="original">
-                    Original order
-                </option>
+            <div class="panel-actions">
+                <button
+                    class="panel-action"
+                    id="exportVocabBtn"
+                    title="Export active lesson">
+                    ↓
+                </button>
 
-                <option value="reverse">
-                    Reverse order
-                </option>
+                <button
+                    class="panel-action"
+                    id="importVocabBtn"
+                    title="Import active lesson">
+                    ↑
+                </button>
 
-                <option value="alphabetic">
-                    Alphabetic
-                </option>
+                <select id="sortMode">
+                    <option value="original">
+                        Original order
+                    </option>
 
-                <option value="random">
-                    Random
-                </option>
-            </select>
+                    <option value="reverse">
+                        Reverse order
+                    </option>
+
+                    <option value="alphabetic">
+                        Alphabetic
+                    </option>
+
+                    <option value="random">
+                        Random
+                    </option>
+                </select>
+            </div>
         </div>
 
         <table>
@@ -241,6 +347,24 @@ tr.selected:not(.manageable):not(.editing) td {
     storage used ...
 </div>
 
+<input
+    id="importFile"
+    type="file"
+    hidden>
+
+<!-- Inline format chooser modal -->
+<div id="formatModal" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true">
+        <div class="modal-title">Choose format</div>
+        <div class="modal-actions">
+            <button class="format-btn" data-format="json">json</button>
+            <button class="format-btn" data-format="tsv">tsv</button>
+            <button class="format-btn" data-format="text">text</button>
+            <button class="format-cancel">Cancel</button>
+        </div>
+    </div>
+</div>
+
 <script>
 // Central application state: lesson selection, row modes, sort mode, and column visibility live here.
 const state = {
@@ -260,6 +384,7 @@ const state = {
 };
 
 let lessons = [];
+let importRequest = null;
 
 const lessonsTbody =
     document.getElementById(
@@ -275,6 +400,12 @@ const vocabularyTitle =
     document.getElementById(
         'vocabularyTitle'
     );
+
+const storageInfo =
+    document.getElementById('storageInfo');
+
+const importFileInput =
+    document.getElementById('importFile');
 
 const rowModeFields = {
     lesson: {
@@ -327,6 +458,28 @@ document
         );
     });
 
+document.getElementById('exportLessonsBtn').onclick =
+    exportLessonsBackup;
+
+document.getElementById('importLessonsBtn').onclick =
+    () => startImport('lessons', 'json');
+
+document.getElementById('exportVocabBtn').onclick =
+    exportActiveLesson;
+
+document.getElementById('importVocabBtn').onclick =
+    async () => {
+        const format = await askLessonFormat('Import');
+
+        if (format) {
+            startImport('vocab', format);
+        }
+    };
+
+importFileInput.onchange = () => {
+    handleImportFile();
+};
+
 function load() {
     const storedLessons = JSON.parse(
         localStorage.getItem('lessons') ?? 'null'
@@ -362,14 +515,324 @@ function renderAll() {
 }
 
 function updateStorageInfo() {
-    const storageInfo =
-        document.getElementById('storageInfo');
-
     const quotaBytes = 5 * 1024 * 1024;
     const usedBytes = getLocalStorageBytes();
 
     storageInfo.textContent =
         `storage used ${formatBytes(usedBytes)} from ${formatBytes(quotaBytes)}`;
+}
+
+function askLessonFormat(action) {
+    const modal = document.getElementById('formatModal');
+    const title = modal.querySelector('.modal-title');
+
+    return new Promise(resolve => {
+        title.textContent = `${action} format`;
+        modal.classList.add('open');
+
+        const cleanup = () => {
+            modal.classList.remove('open');
+            // remove handlers
+            modal.querySelectorAll('.format-btn').forEach(b => (b.onclick = null));
+            modal.querySelector('.format-cancel').onclick = null;
+            document.removeEventListener('keydown', onKey);
+        };
+
+        const choose = fmt => {
+            cleanup();
+            resolve(fmt);
+        };
+
+        const onKey = e => {
+            if (e.key === 'Escape') {
+                cleanup();
+                resolve(null);
+            }
+        };
+
+        modal.querySelectorAll('.format-btn').forEach(btn => {
+            btn.onclick = () => choose(btn.dataset.format);
+        });
+
+        modal.querySelector('.format-cancel').onclick = () => {
+            cleanup();
+            resolve(null);
+        };
+
+        modal.addEventListener(
+            'click',
+            e => {
+                if (e.target === modal) {
+                    cleanup();
+                    resolve(null);
+                }
+            },
+            { once: true }
+        );
+
+        document.addEventListener('keydown', onKey);
+    });
+}
+
+function startImport(scope, format) {
+    importRequest = { scope, format };
+    importFileInput.accept =
+        scope === 'lessons'
+            ? '.json,application/json'
+            : format === 'json'
+                ? '.json,application/json'
+                : format === 'tsv'
+                    ? '.tsv,text/tab-separated-values'
+                    : '.txt,text/plain';
+    importFileInput.value = '';
+    importFileInput.click();
+}
+
+async function handleImportFile() {
+    const file = importFileInput.files?.[0];
+
+    if (!importRequest || !file) {
+        importRequest = null;
+        return;
+    }
+
+    try {
+        const text = await file.text();
+
+        if (importRequest.scope === 'lessons') {
+            importLessonsBackup(text);
+        } else {
+            importLessonWords(text, importRequest.format);
+        }
+
+        save();
+        renderAll();
+    } catch (error) {
+        alert(error?.message ?? String(error));
+    } finally {
+        importRequest = null;
+        importFileInput.value = '';
+    }
+}
+
+function exportLessonsBackup() {
+    downloadTextFile(
+        'lessons-backup.json',
+        JSON.stringify(lessons, null, 2),
+        'application/json'
+    );
+}
+
+async function exportActiveLesson() {
+    const lesson = getActiveLesson();
+
+    if (!lesson) {
+        return;
+    }
+
+    const format = await askLessonFormat('Export');
+
+    if (!format) {
+        return;
+    }
+
+    const payload =
+        format === 'json'
+            ? JSON.stringify(lesson, null, 2)
+            : serializeWords(lesson.words, format);
+
+    downloadTextFile(
+        `${safeFileStem(lesson.title)}.${format === 'text' ? 'txt' : format}`,
+        payload,
+        mimeTypeForFormat(format)
+    );
+}
+
+function importLessonsBackup(text) {
+    const parsed = JSON.parse(text);
+    const incomingLessons = Array.isArray(parsed)
+        ? parsed
+        : Array.isArray(parsed?.lessons)
+            ? parsed.lessons
+            : null;
+
+    if (!incomingLessons) {
+        throw new Error('Invalid lessons JSON backup.');
+    }
+
+    incomingLessons.forEach(rawLesson => {
+        const lesson = normalizeLesson(rawLesson);
+        upsertLesson(lesson);
+    });
+}
+
+function importLessonWords(text, format) {
+    const lesson = getActiveLesson();
+
+    if (!lesson) {
+        throw new Error('No active lesson selected.');
+    }
+
+    if (format === 'json') {
+        const parsed = JSON.parse(text);
+        const wordItems = Array.isArray(parsed)
+            ? parsed
+            : Array.isArray(parsed?.words)
+                ? parsed.words
+                : Array.isArray(parsed?.lesson?.words)
+                    ? parsed.lesson.words
+                    : null;
+
+        if (!wordItems) {
+            throw new Error('Invalid JSON word list.');
+        }
+
+        const incomingWords = wordItems.map(normalizeWord);
+        mergeWordsById(lesson.words, incomingWords);
+
+        if (typeof parsed?.title === 'string' && parsed.title.trim()) {
+            lesson.title = parsed.title.trim();
+        }
+
+        return;
+    }
+
+    const incomingWords = parseWordLines(text, format);
+    lesson.words.push(...incomingWords);
+}
+
+function upsertLesson(lesson) {
+    const index = lessons.findIndex(item => item.id === lesson.id);
+
+    if (index >= 0) {
+        lessons[index] = lesson;
+        return;
+    }
+
+    lessons.push(lesson);
+}
+
+function mergeWordsById(targetWords, incomingWords) {
+    incomingWords.forEach(word => {
+        const index = targetWords.findIndex(item => item.id === word.id);
+
+        if (index >= 0) {
+            targetWords[index] = word;
+            return;
+        }
+
+        targetWords.push(word);
+    });
+}
+
+function parseWordLines(text, format) {
+    const lines = text.split(/\r?\n/);
+    const words = [];
+
+    lines.forEach((line, lineIndex) => {
+        const trimmed = line.trim();
+
+        if (!trimmed) {
+            return;
+        }
+
+        const parsed = format === 'tsv'
+            ? parseTsvLine(trimmed, lineIndex + 1)
+            : parseDashLine(trimmed, lineIndex + 1);
+
+        words.push(parsed);
+    });
+
+    return words;
+}
+
+function parseTsvLine(line, lineNumber) {
+    const parts = line.split('\t');
+
+    if (parts.length < 2) {
+        throw new Error(`Invalid TSV on line ${lineNumber}.`);
+    }
+
+    const word = parts.shift().trim();
+    const translation = parts.join('\t').trim();
+
+    if (!word) {
+        throw new Error(`Empty word on line ${lineNumber}.`);
+    }
+
+    return {
+        id: crypto.randomUUID(),
+        word,
+        translation
+    };
+}
+
+function parseDashLine(line, lineNumber) {
+    const separatorIndex = line.indexOf(' – ');
+
+    if (separatorIndex < 0) {
+        throw new Error(`Invalid text format on line ${lineNumber}. Expected "word – translation".`);
+    }
+
+    const word = line.slice(0, separatorIndex).trim();
+    const translation = line.slice(separatorIndex + 3).trim();
+
+    if (!word) {
+        throw new Error(`Empty word on line ${lineNumber}.`);
+    }
+
+    return {
+        id: crypto.randomUUID(),
+        word,
+        translation
+    };
+}
+
+function serializeWords(words, format) {
+    if (format === 'json') {
+        return JSON.stringify(words, null, 2);
+    }
+
+    const lines = words.map(word =>
+        format === 'tsv'
+            ? `${word.word}\t${word.translation}`
+            : `${word.word} - ${word.translation}`
+    );
+
+    return lines.join('\n');
+}
+
+function mimeTypeForFormat(format) {
+    switch (format) {
+        case 'json':
+            return 'application/json';
+        case 'tsv':
+            return 'text/tab-separated-values';
+        default:
+            return 'text/plain';
+    }
+}
+
+function safeFileStem(text) {
+    return String(text)
+        .trim()
+        .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
+        .replace(/\s+/g, '_')
+        .replace(/_+/g, '_')
+        .replace(/^_|_$/g, '') || 'lesson';
+}
+
+function downloadTextFile(filename, content, mimeType) {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+
+    anchor.href = url;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
 }
 
 function getLocalStorageBytes() {
@@ -463,7 +926,10 @@ function setRowMode(scope, mode, rowId = null) {
 
     state[fields.mode] = mode;
 
-    if (arguments.length >= 3) {
+    if (
+        arguments.length >= 3 ||
+        (mode === 'view' && scope === 'vocab')
+    ) {
         state[fields.activeId] = rowId;
     }
 }
@@ -1288,6 +1754,18 @@ function handleOutsideClick(e) {
         path.includes(vocabTbody) ||
         path.includes(
             document.getElementById('sortMode')
+        ) ||
+        path.includes(
+            document.getElementById('exportLessonsBtn')
+        ) ||
+        path.includes(
+            document.getElementById('importLessonsBtn')
+        ) ||
+        path.includes(
+            document.getElementById('exportVocabBtn')
+        ) ||
+        path.includes(
+            document.getElementById('importVocabBtn')
         ) ||
         path.some(node =>
             node?.matches?.('[data-toggle-column]')
