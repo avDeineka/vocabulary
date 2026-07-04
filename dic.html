@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -628,7 +628,7 @@ function handleSelectionChange() {
         ? range.commonAncestorContainer
         : range.commonAncestorContainer?.parentElement;
 
-    if (!container?.closest('.vocabulary-panel') || container.closest('input, textarea')) {
+    if (container.closest('input, textarea')) {
         return;
     }
 
@@ -655,18 +655,17 @@ function handleDocumentClick(event) {
         return;
     }
 
-    if (event.target.closest('.vocabulary-panel')) {
-        return;
+    const selection = window.getSelection();
+    if (!selection || !selection.toString().trim()) {
+        hideSpeechSelectionButton();
     }
-
-    hideSpeechSelectionButton();
 }
 
 function handleDoubleClickWord(event) {
     const target = event.target;
     const cell = target?.closest('td');
 
-    if (!cell || !cell.closest('.vocabulary-panel')) {
+    if (!cell || (!cell.closest('.vocabulary-panel') && !cell.closest('.lessons-panel'))) {
         return;
     }
 
@@ -1852,6 +1851,12 @@ function appendAddWordRow() {
 }
 
 function handleLessonsClick(e) {
+    // Ignore click events when they are part of a text selection
+    const selection = window.getSelection();
+    if (selection && selection.toString().trim()) {
+        return;
+    }
+
     const button =
         e.target.closest('button');
 
@@ -1988,6 +1993,12 @@ function handleVocabularyClick(e) {
 }
 
 function handleOutsideClick(e) {
+    // Ignore click events when they are part of a text selection
+    const selection = window.getSelection();
+    if (selection && selection.toString().trim()) {
+        return;
+    }
+
     const path =
         typeof e.composedPath === 'function'
             ? e.composedPath()
