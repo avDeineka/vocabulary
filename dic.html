@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -403,6 +403,8 @@ const state = {
         translation: {}
     }
 };
+
+const textSeparator = '--';
 
 let lessons = [];
 let importRequest = null;
@@ -1005,14 +1007,14 @@ function parseTsvLine(line, lineNumber) {
 }
 
 function parseDashLine(line, lineNumber) {
-    const separatorIndex = line.indexOf(' – ');
+    const separatorIndex = line.indexOf(` ${textSeparator} `);
 
     if (separatorIndex < 0) {
-        throw new Error(`Invalid text format on line ${lineNumber}. Expected "word – translation".`);
+        throw new Error(`Invalid text format on line ${lineNumber}. Expected "word ${textSeparator} translation".`);
     }
 
     const word = line.slice(0, separatorIndex).trim();
-    const translation = line.slice(separatorIndex + 3).trim();
+    const translation = line.slice(separatorIndex + textSeparator.length + 2).trim();
 
     if (!word) {
         throw new Error(`Empty word on line ${lineNumber}.`);
@@ -1033,7 +1035,7 @@ function serializeWords(words, format) {
     const lines = words.map(word =>
         format === 'tsv'
             ? `${word.word}\t${word.translation}`
-            : `${word.word} - ${word.translation}`
+            : `${word.word} ${textSeparator} ${word.translation}`
     );
 
     return lines.join('\n');
